@@ -1,3 +1,6 @@
+
+# provided
+
 from math import atan
 
 class YawController(object):
