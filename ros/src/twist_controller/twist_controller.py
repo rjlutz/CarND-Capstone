@@ -1,15 +1,17 @@
 from time import time
 from pid import PID
 from yaw_controller import YawController
+import rospy
 
 GAS_DENSITY = 2.858
 ONE_MPH = 0.44704
 
+Kp, Ki, Kd = 0.1550, 0.00025, 4.0 # from earlier project, could improve w/ twidding
 
 class Controller(object):
     def __init__(self, vehicle_mass, fuel_capacity, brake_deadband, wheel_radius,
                  decel_limit, accel_limit, wheel_base, steer_ratio, max_lat_accel,
-                 max_steer_angle, Kp, Ki, Kd):
+                 max_steer_angle):
 
         min_speed = 1.0 * ONE_MPH
 
@@ -51,6 +53,7 @@ class Controller(object):
         if error < 0: # decelerate!
             deceleration = abs(error) / dt
             if abs(deceleration) > abs(self.decel_limit):
+                ##rospy.loginfo("Limiting decel from {} to {}".format(deceleration, self.decel_limit))
                 deceleration = self.decel_limit  # Limited to deceleration limits
             brake = deceleration * (self.vehicle_mass + self.fuel_capacity * GAS_DENSITY) *  self.wheel_radius # in N/m
             if brake < self.brake_deadband:
