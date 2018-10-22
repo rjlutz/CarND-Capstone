@@ -51,6 +51,7 @@ class WaypointUpdater(object):
         self.waypoints = None
         self.waypoints_2d = None
         self.tree = None
+        self.braking = False
 
         self.loop()
 
@@ -97,34 +98,42 @@ class WaypointUpdater(object):
             lane.waypoints = base_waypoints
         else:
 
-            if (self.stopline_wp_idx >= farthest_idx or  # Too far or slightly past
-                    self.stopline_wp_idx - 2 <= closest_idx):
+            d_to_stop = self.arc_distance(self.base_waypoints.waypoints, closest_idx, self.stopline_wp_idx - 2)
+            STOP_THRESH = 85 * 0.3048
+            # 85' per https://nacto.org/docs/usdg/vehicle_stopping_distance_and_time_upenn.pdf
+            if d_to_stop > STOP_THRESH:
+                lane.waypoints = base_waypoints
+                self.braking = False
+            elif d_to_stop < 5 and not self.braking:
                 lane.waypoints = base_waypoints
             else:
-                lane.waypoints = self.decelerate_waypoints(base_waypoints, closest_idx)  # Nellie slow down!
-
+                lane.waypoints = self.decelerate_waypoints(base_waypoints, d_to_stop, closest_idx)  # Nellie slow down!
+                self.braking = True
         return lane
 
     def get_current_speed(self):
         return self.twisted.twist.linear.x
 
-    def decelerate_waypoints(self, waypoints, closest_idx):
+    def decelerate_waypoints(self, waypoints, total_dist, closest_idx):
         temp = []
 
         cur_speed = self.twisted.twist.linear.x
         stop_idx = self.stopline_wp_idx - 2  # two waypoints back from the line so front of car stops at the line
-        total_dist = self.arc_distance(waypoints, 0, stop_idx - closest_idx)
+        # total_dist = self.arc_distance(waypoints, 0, stop_idx - closest_idx)
 
         # DEBUG
-        rospy.loginfo("cur speed = {}".format(cur_speed))
-        rospy.loginfo("closest_idx, stop_idx self.stopline_wp_idx = {} {} {}".format(closest_idx, stop_idx, self.stopline_wp_idx,closest_idx))
+        # rospy.loginfo("cur speed = {}".format(cur_speed))
+        # rospy.loginfo("closest_idx, stop_idx self.stopline_wp_idx total_dist = {} {} {} {} {}".format(closest_idx, stop_idx, self.stopline_wp_idx, closest_idx, total_dist))
 
         for i, wp in enumerate(waypoints):
             p = Waypoint()
             p.pose = waypoints[i].pose
 
             dist = self.arc_distance(waypoints, i, stop_idx - closest_idx)
-            vel = dist / total_dist * cur_speed  # linear ramp, fast to slower to zero, could use an S curve here
+            if dist == 0:
+                vel = 0
+            else:
+                vel = dist / total_dist * cur_speed  # linear ramp, fast to slower to zero, could use an S curve here
 
             if vel < 1.:
                 vel = 0.
@@ -139,10 +148,10 @@ class WaypointUpdater(object):
         temp.append(p)
 
         # DEBUG
-        v_str = ""
-        for j in range(len(temp)-1):
-            v_str = v_str + "{00:.2f} ".format(temp[j].twist.twist.linear.x)
-        rospy.loginfo("vels: {}\n".format(v_str))
+        # v_str = ""
+        # for j in range(len(temp)-1):
+        #     v_str = v_str + "{00:.2f} ".format(temp[j].twist.twist.linear.x)
+        # rospy.loginfo("vels: {}\n".format(v_str))
 
         return temp
 

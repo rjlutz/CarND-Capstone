@@ -1,12 +1,9 @@
 from time import time
-from pid import PID
 from yaw_controller import YawController
-import rospy
+from velocity_controller import VelocityController
 
 GAS_DENSITY = 2.858
 ONE_MPH = 0.44704
-
-Kp, Ki, Kd = 0.1550, 0.00025, 4.0 # from earlier project, could improve w/ twidding
 
 class Controller(object):
     def __init__(self, vehicle_mass, fuel_capacity, brake_deadband, wheel_radius,
@@ -26,7 +23,9 @@ class Controller(object):
         self.max_lat_accel = max_lat_accel
         self.max_steer_angle = max_steer_angle
 
-        self.throttle_pid = PID(Kp, Ki, Kd)
+        self.speed_controller = VelocityController(vehicle_mass,
+            wheel_radius, accel_limit, decel_limit, brake_deadband,
+            fuel_capacity, max_lat_accel)
         self.yaw_control = YawController(wheel_base, steer_ratio, min_speed, max_lat_accel,
             max_steer_angle)
         self.prev_time = None
@@ -46,21 +45,10 @@ class Controller(object):
 
         dt = time() - self.prev_time
 
-        error = min(target_v, self.max_speed) - current_v # max speed in MPH
-        throttle = self.throttle_pid.step(error, dt)
-        throttle = max(0.0, min(1.0, throttle))           # max throttle is 1.0
+        throttle, brake = self.speed_controller.control(target_v,
+            current_v, 0.5)
 
-        if error < 0: # decelerate!
-            deceleration = abs(error) / dt
-            if abs(deceleration) > abs(self.decel_limit):
-                ##rospy.loginfo("Limiting decel from {} to {}".format(deceleration, self.decel_limit))
-                deceleration = self.decel_limit  # Limited to deceleration limits
-            brake = deceleration * (self.vehicle_mass + self.fuel_capacity * GAS_DENSITY) *  self.wheel_radius # in N/m
-            if brake < self.brake_deadband:
-                brake = 0.0
-            throttle = 0.0
-        else:
-            brake = 0.0
+        error = min(target_v, self.max_speed) - current_v # max speed in MPH
 
         steer = self.yaw_control.get_steering(target_v, target_omega, current_v)
         self.prev_time = time()
